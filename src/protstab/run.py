@@ -2,11 +2,11 @@
 
 Proper split-conformal: ridge is fit on train-minus-validation, absolute
 residuals calibrated on the FLIP `validation` subset (still train-side),
-and coverage measured on the held-out cluster split — the intervals are
-honest only because calibration never sees the test set.
+and coverage measured on the held-out cluster split. The intervals are
+valid only because calibration never sees the test set.
 
 Applicability domain: Euclidean distance in embedding space to the
-training centroid, bucketed into quartiles on the test set — does
+training centroid, bucketed into quartiles on the test set. Does
 coverage degrade where the model extrapolates?
 """
 

@@ -1,8 +1,8 @@
 """Sequence encoders.
 
-esm2:        mean-pooled ESM-2 last hidden state (the claim under test —
+esm2:        mean-pooled ESM-2 last hidden state (the claim under test:
              a protein LM should carry biophysical signal).
-composition: the no-LM baseline — 20 amino-acid frequencies + log length.
+composition: the no-LM baseline: 20 amino-acid frequencies + log length.
              If ESM-2 can't beat this, the embedding earns nothing.
 """
 
@@ -69,7 +69,7 @@ def build_features(seqs: pd.Series, encoder_cfg: dict,
 
         npy = Path(f"{cache_stem}_esm2.npy")
         key_f = Path(f"{cache_stem}_esm2.key")
-        # key covers encoder params + exact sequence list — a config change
+        # key covers encoder params + exact sequence list. A config change
         # must not silently reuse stale embeddings
         key = hashlib.sha256(
             (json.dumps(encoder_cfg, sort_keys=True)

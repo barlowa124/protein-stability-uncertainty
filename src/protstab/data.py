@@ -2,7 +2,7 @@
 
 The zip ships a ready-made CSV (sequence, target=melting point C, set,
 validation flag) built from MMSeqs2 20%-identity clusters: held-out
-clusters share <=20% identity with training — homology-aware evaluation
+clusters share <=20% identity with training: homology-aware evaluation
 by construction. The `validation` column marks a train-side subset we
 use as the conformal calibration set, so calibration never touches the
 held-out clusters.
