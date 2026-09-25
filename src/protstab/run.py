@@ -24,7 +24,10 @@ from protstab.provenance import write_manifest
 
 def fit_ridge(X, y, alpha):
     from sklearn.linear_model import Ridge
-    m = Ridge(alpha=alpha)
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    m = make_pipeline(StandardScaler(), Ridge(alpha=alpha, solver="lsqr"))
     m.fit(X, y)
     return m
 
@@ -59,7 +62,8 @@ def ad_table(centroid_dist, cov, resid_abs, bins):
         rows.append({
             "bin": b,
             "n": int(sel.sum()),
-            "dist_range": [float(edges[b]), float(min(edges[b + 1], 1e9))],
+            "dist_range": [float(edges[b]),
+                           float(min(edges[b + 1], centroid_dist.max()))],
             "coverage": float(cov[sel].mean()),
             "mae": float(resid_abs[sel].mean()),
         })
@@ -87,9 +91,8 @@ def main(in_parquet: str, out_json: str):
 
     # Baseline first: composition features, same protocol
     for name, Xf in {
-        "composition": (
-            composition(pd.concat([tr.sequence, cal.sequence, te.sequence])),
-        ),
+        "composition": composition(
+            pd.concat([tr.sequence, cal.sequence, te.sequence])),
         "esm2": build_features(
             pd.concat([tr.sequence, cal.sequence, te.sequence]),
             enc, cache_stem=f"{stem}_all"),

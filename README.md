@@ -33,7 +33,32 @@ ESM-2 embed -> ridge -> split-conformal + applicability-domain eval.
 
 ## Result
 
-(committed in `results/summary.json`, populated by the DAG run)
+(committed in `results/summary.json`; homology-separated test clusters)
+
+| Features | RMSE °C | MAE °C | Spearman | Conformal coverage (target 0.90) | Mean width °C |
+|---|---:|---:|---:|---:|---:|
+| composition + length | 9.62 | 7.49 | 0.32 | 0.886 | 30.0 |
+| ESM-2 mean-pooled | **7.78** | **5.93** | **0.50** | 0.899 | 25.2 |
+
+Sequence LM embeddings carry real thermostability signal: +0.18
+Spearman and -2.3 °C MAE over composition, with narrower intervals.
+
+Coverage lands at 0.89-0.90 *marginally*, but the applicability-domain
+table shows it is not uniform (ESM-2 view, quartiles of distance to the
+training centroid):
+
+| AD quartile | n | Coverage | MAE °C |
+|---|---:|---:|---:|
+| nearest | 784 | 0.950 | 4.7 |
+| | 783 | 0.902 | 5.7 |
+| | 783 | 0.853 | 6.4 |
+| farthest | 784 | 0.853 | 6.9 |
+
+Predictions degrade smoothly with distance from the training manifold
+(MAE +46%, coverage -9.7pp nearest to farthest) -- the marginal
+conformal guarantee hides a domain gradient. Composition features show
+no gradient (flat ~0.87 across bins), meaning its distance measure is
+uninformative; the embedding AD is doing real work.
 
 ## Caveats
 
@@ -46,6 +71,11 @@ ESM-2 embed -> ridge -> split-conformal + applicability-domain eval.
   calibrated guarantee conditioned on the domain flag.
 - Ridge on mean-pooled embeddings loses positional information.
   Per-residue or attention-pooled features are the known upgrade path.
+- 2,890 sequences >1024 aa are truncated (count logged). Their measured
+  melting points may reflect C-terminal or multi-domain behavior the
+  truncated embedding cannot see.
+- Marginal coverage at/near target does not imply per-domain coverage;
+  the AD quartiles show undercoverage where extrapolation is strongest.
 
 ## Run
 
