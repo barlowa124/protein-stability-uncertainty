@@ -94,12 +94,14 @@ def mondrian_eval(m, X_cal, y_cal, dist_cal, dist_te, yhat, y_te,
     edges[0], edges[-1] = -1e-9, np.inf
     resid_te = np.abs(yhat - y_te)
     cov = np.zeros(len(y_te), dtype=bool)
+    q_bins = np.full(bins, q_global)
     rows = []
     for b in range(bins):
         sel_c = (dist_cal > edges[b]) & (dist_cal <= edges[b + 1])
         sel_t = (dist_te > edges[b]) & (dist_te <= edges[b + 1])
         q_b = (np.quantile(resid_cal[sel_c], 1 - alpha)
                if sel_c.sum() >= min_cal else q_global)
+        q_bins[b] = q_b
         cov[sel_t] = resid_te[sel_t] <= q_b
         if sel_t.sum():
             rows.append({
@@ -113,7 +115,39 @@ def mondrian_eval(m, X_cal, y_cal, dist_cal, dist_te, yhat, y_te,
                 "mae": float(resid_te[sel_t].mean()),
                 "fallback": bool(sel_c.sum() < min_cal),
             })
-    return rows, cov, edges
+    return rows, cov, edges, q_bins
+
+
+def export_deployable(m, name, centroid, edges, q_bins, q_global,
+                      enc, alpha, out_path):
+    """Write the fitted model + conformal parameters as plain JSON.
+
+    Ridge + StandardScaler + conformal quantiles serialize losslessly;
+    a JSON artifact is diffable and loads in any runtime (e.g. the
+    HuggingFace Space) without pickle."""
+    sc = m.named_steps["standardscaler"]
+    ridge = m.named_steps["ridge"]
+    doc = {
+        "feature": name,
+        "linear_model": {
+            "coef": ridge.coef_.tolist(),
+            "intercept": float(ridge.intercept_),
+            "scaler_mean": sc.mean_.tolist(),
+            "scaler_scale": sc.scale_.tolist(),
+        },
+        "applicability_domain": {
+            "centroid": centroid.tolist(),
+            "bin_edges_inner": [float(e) for e in edges[1:-1]],
+            "global_q": float(q_global),
+            "bin_q": q_bins.tolist(),
+        },
+        "encoder": enc,
+        "conformal_alpha": alpha,
+        "note": ("research/education only. Interval bounds model error at "
+                 "the stated alpha, not assay reproducibility."),
+    }
+    with open(out_path, "w") as f:
+        json.dump(doc, f)
 
 
 def main(in_parquet: str, out_json: str):
@@ -152,9 +186,12 @@ def main(in_parquet: str, out_json: str):
         centroid = X_tr.mean(axis=0)
         dist_cal = np.linalg.norm(X_cal - centroid, axis=1)
         dist_te = np.linalg.norm(X_te - centroid, axis=1)
-        mon_rows, mon_cov, edges = mondrian_eval(
+        mon_rows, mon_cov, edges, q_bins = mondrian_eval(
             m, X_cal, cal.target.to_numpy(), dist_cal, dist_te,
             yhat, te.target.to_numpy(), alpha, ev["ad_bins"])
+        export_deployable(
+            m, name, centroid, edges, q_bins, q, enc, alpha,
+            str(Path(out_json).parent / f"deploy_{name}.json"))
         res = {
             "conformal_q": float(q),
             "coverage": float(cov.mean()),

@@ -114,6 +114,15 @@ Embeddings cache to `data/processed/*_esm2.npy` keyed by encoder config
 and exact sequence list. A changed model or context silently invalidates
 the cache instead of reusing it.
 
+## Deployable artifact + Space
+
+`results/deploy_esm2.json` is the fitted model as plain JSON (scaler +
+ridge coefficients + centroid + per-bin conformal quantiles), so it is
+diffable and loads without pickle. `spaces/protein-stability/` holds a
+Gradio app (sequence -> Tm + per-bin interval + domain flag) that
+consumes it; `spaces/protein-stability/push_space.sh` copies app +
+artifact into a cloned HuggingFace Space repo.
+
 ## Data
 
 FLIP `splits/meltome/splits.zip` (CC BY 4.0; meltome atlas per Jarzab et

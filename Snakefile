@@ -30,5 +30,7 @@ rule run:
         rules.prepare.output,
     output:
         "results/summary.json",
+        "results/deploy_composition.json",
+        "results/deploy_esm2.json",
     shell:
-        "{PP} {PY} -m protstab.run {input} {output}"
+        "{PP} {PY} -m protstab.run {input} {output.0}"
