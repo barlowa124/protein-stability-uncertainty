@@ -27,31 +27,58 @@ def composition(seqs: pd.Series) -> np.ndarray:
     return X
 
 
+def _token_budget_batches(lengths, batch_size, token_budget):
+    """Yield index slices: at most `batch_size` seqs AND at most
+    `token_budget` total padded tokens per batch. Attention memory scales
+    with batch_len^2 x batch_count, which a fixed-size batch can't bound
+    on a protein corpus (10k+ aa outliers OOM MPS)."""
+    i, n = 0, len(lengths)
+    while i < n:
+        # lengths are sorted ascending: padded cost of batch i..j is
+        # count * lengths[j] (the batch's longest member)
+        j = i
+        while (j < n and j - i < batch_size
+               and lengths[j] * (j - i + 1) <= token_budget):
+            j += 1
+        yield slice(i, max(j, i + 1))
+        i = max(j, i + 1)
+
+
 def esm2_embed(seqs: pd.Series, model_name: str = "facebook/esm2_t6_8M_UR50D",
-               batch_size: int = 128, max_len: int = 1024) -> np.ndarray:
+               batch_size: int = 128, max_len: int = 1024,
+               token_budget: int = 16384) -> np.ndarray:
     """Mean-pooled last hidden state over residue positions.
     Sequences longer than `max_len` are truncated (counted by caller)."""
     import torch
     from transformers import AutoModel, AutoTokenizer
 
-    seqs = [s[:max_len] for s in seqs]
+    seqs = [str(s)[:max_len] for s in seqs]
     device = (
         "mps" if torch.backends.mps.is_available()
         else "cuda" if torch.cuda.is_available() else "cpu"
     )
     tok = AutoTokenizer.from_pretrained(model_name)
     model = AutoModel.from_pretrained(model_name).to(device).eval()
+    # length-sorted, token-budgeted batching: padding waste collapses when
+    # batch members share a length, and memory stays bounded on outliers
+    order = np.argsort([len(s) for s in seqs])
+    sorted_seqs = [seqs[i] for i in order]
+    lens = [len(s) + 2 for s in sorted_seqs]  # +2 for BOS/EOS
     out = np.zeros((len(seqs), model.config.hidden_size), dtype=np.float32)
     with torch.no_grad():
-        for i in range(0, len(seqs), batch_size):
-            enc = tok(seqs[i : i + batch_size], return_tensors="pt",
+        for sl in _token_budget_batches(lens, batch_size, token_budget):
+            enc = tok(sorted_seqs[sl], return_tensors="pt",
                       padding=True, truncation=True,
                       max_length=max_len).to(device)
             hidden = model(**enc).last_hidden_state
             mask = enc["attention_mask"].unsqueeze(-1).float()
-            out[i : i + batch_size] = (
+            out[order[sl]] = (
                 (hidden * mask).sum(1) / mask.sum(1)
             ).cpu().numpy()
+            del enc, hidden, mask
+            if device == "mps":
+                torch.mps.empty_cache()  # MPS allocator retains across
+                                         # batches; flush or it OOMs
     return out
 
 
