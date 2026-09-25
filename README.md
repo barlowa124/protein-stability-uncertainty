@@ -28,8 +28,14 @@ ESM-2 embed -> ridge -> split-conformal + applicability-domain eval.
   subset (still train-side). 90% target coverage is measured on held-out
   clusters. Calibration never touches test.
 - **Applicability domain**: Euclidean distance in embedding space to the
-  training centroid, quartile-binned on test. Does coverage degrade
-  where the model extrapolates?
+  training centroid. Bin edges are fixed on the calibration split (test
+  quartiles would leak), so unequal test-bin sizes reflect real domain
+  shift.
+- **Conditional coverage**: Mondrian conformal, a separate residual
+  quantile per AD bin. Marginal coverage can hide a domain gradient;
+  per-bin calibration recovers flat coverage by widening intervals
+  where extrapolation is real. Sparse bins (<30 calibration points)
+  fall back to the global quantile.
 
 ## Result
 
@@ -43,22 +49,37 @@ ESM-2 embed -> ridge -> split-conformal + applicability-domain eval.
 Sequence LM embeddings carry real thermostability signal: +0.18
 Spearman and -2.3 °C MAE over composition, with narrower intervals.
 
-Coverage lands at 0.89-0.90 *marginally*, but the applicability-domain
-table shows it is not uniform (ESM-2 view, quartiles of distance to the
-training centroid):
+Marginal coverage lands at 0.89-0.90, but it is not uniform across the
+applicability domain. With bins fixed on calibration-distance quartiles
+(ESM-2 view):
 
-| AD quartile | n | Coverage | MAE °C |
+| AD bin (near -> far) | n_test | Marginal coverage | MAE °C |
 |---|---:|---:|---:|
-| nearest | 784 | 0.950 | 4.7 |
-| | 783 | 0.902 | 5.7 |
-| | 783 | 0.853 | 6.4 |
-| farthest | 784 | 0.853 | 6.9 |
+| nearest | 743 | 0.964 | 4.7 |
+| | 714 | 0.916 | 5.6 |
+| | 866 | 0.876 | 6.3 |
+| farthest | 811 | 0.847 | 6.9 |
 
 Predictions degrade smoothly with distance from the training manifold
-(MAE +46%, coverage -9.7pp nearest to farthest) -- the marginal
-conformal guarantee hides a domain gradient. Composition features show
-no gradient (flat ~0.87 across bins), meaning its distance measure is
-uninformative; the embedding AD is doing real work.
+(MAE +47%, coverage -11.7pp nearest to farthest). **Mondrian conformal
+recovers flat per-bin coverage** -- a separate residual quantile per bin:
+
+| AD bin | q (half-width °C) | Coverage | MAE °C |
+|---|---:|---:|---:|
+| nearest | 9.8 | 0.894 | 4.7 |
+| | 11.2 | 0.868 | 5.6 |
+| | 14.0 | 0.912 | 6.3 |
+| farthest | 14.5 | 0.908 | 6.9 |
+
+The mechanism is visible in the half-widths: intervals widen from 9.8 °C
+near the manifold to 14.5 °C at the edge, and the near bin's *coverage
+drops* (0.964 -> 0.894) because its interval correctly shrinks. That is
+the honest trade: same marginal coverage (~0.90), but now the guarantee
+holds per-bin instead of pooling easy and hard points.
+
+Composition features stay flat (~0.88 across all bins) under both
+schemes. Its distance measure is uninformative, which is itself the
+finding: the embedding-space AD is doing real diagnostic work.
 
 ## Caveats
 
@@ -75,7 +96,10 @@ uninformative; the embedding AD is doing real work.
   melting points may reflect C-terminal or multi-domain behavior the
   truncated embedding cannot see.
 - Marginal coverage at/near target does not imply per-domain coverage;
-  the AD quartiles show undercoverage where extrapolation is strongest.
+  Mondrian bins flatten the gradient but per-bin coverage is still a
+  finite-sample estimate, not a strict conditional guarantee.
+- AD bins are coarse quartiles, not a learned domain boundary; a
+  distance threshold for abstention would need its own calibration.
 
 ## Run
 

@@ -6,8 +6,11 @@ and coverage measured on the held-out cluster split. The intervals are
 valid only because calibration never sees the test set.
 
 Applicability domain: Euclidean distance in embedding space to the
-training centroid, bucketed into quartiles on the test set. Does
-coverage degrade where the model extrapolates?
+training centroid. Bin edges are fixed on the *calibration* set (test
+quartiles would leak), so unequal test-bin sizes reflect real domain
+shift. Marginal coverage can hide a domain gradient: Mondrian conformal
+calibrates a separate residual quantile per bin and recovers per-bin
+coverage at the cost of wider intervals where extrapolation is real.
 """
 
 import json
@@ -22,14 +25,27 @@ from protstab.encode import build_features, composition
 from protstab.provenance import write_manifest
 
 
+def _quiet(fn, *args):
+    """macOS Accelerate BLAS raises spurious FP warnings (divide/overflow/
+    invalid) inside any large matmul. Results verified against float64
+    reference (max diff ~1e-6); the flag state is the artifact, not the
+    math."""
+    with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+        return fn(*args)
+
+
 def fit_ridge(X, y, alpha):
     from sklearn.linear_model import Ridge
     from sklearn.pipeline import make_pipeline
     from sklearn.preprocessing import StandardScaler
 
     m = make_pipeline(StandardScaler(), Ridge(alpha=alpha, solver="lsqr"))
-    m.fit(X, y)
+    _quiet(m.fit, X, y)
     return m
+
+
+def predict(m, X):
+    return _quiet(m.predict, X)
 
 
 def metrics(y, yhat):
@@ -44,30 +60,60 @@ def metrics(y, yhat):
 
 def conformal_eval(m, X_cal, y_cal, X_te, y_te, alpha):
     """Split conformal: q = (1-alpha) quantile of |y - yhat| on cal."""
-    q = np.quantile(np.abs(m.predict(X_cal) - y_cal), 1 - alpha)
-    yhat = m.predict(X_te)
+    q = np.quantile(np.abs(predict(m, X_cal) - y_cal), 1 - alpha)
+    yhat = predict(m, X_te)
     cov = np.abs(yhat - y_te) <= q
     return q, yhat, cov
 
 
-def ad_table(centroid_dist, cov, resid_abs, bins):
-    """Coverage + error by applicability-domain distance quartile."""
-    edges = np.quantile(centroid_dist, np.linspace(0, 1, bins + 1))
-    edges[0], edges[-1] = -1e-9, np.inf
+def _descriptive_table(dist_te, cov, resid_abs, edges):
+    """Marginal coverage + error per fixed AD bin (diagnostic, not calibrated)."""
     rows = []
-    for b in range(bins):
-        sel = (centroid_dist > edges[b]) & (centroid_dist <= edges[b + 1])
+    for b in range(len(edges) - 1):
+        sel = (dist_te > edges[b]) & (dist_te <= edges[b + 1])
         if sel.sum() == 0:
             continue
         rows.append({
             "bin": b,
             "n": int(sel.sum()),
             "dist_range": [float(edges[b]),
-                           float(min(edges[b + 1], centroid_dist.max()))],
+                           float(min(edges[b + 1], dist_te.max()))],
             "coverage": float(cov[sel].mean()),
             "mae": float(resid_abs[sel].mean()),
         })
     return rows
+
+
+def mondrian_eval(m, X_cal, y_cal, dist_cal, dist_te, yhat, y_te,
+                  alpha, bins, min_cal=30):
+    """Mondrian conformal: per-AD-bin residual quantiles, edges fixed on
+    calibration distances. Sparse bins fall back to the global quantile."""
+    resid_cal = np.abs(predict(m, X_cal) - y_cal)
+    q_global = np.quantile(resid_cal, 1 - alpha)
+    edges = np.quantile(dist_cal, np.linspace(0, 1, bins + 1))
+    edges[0], edges[-1] = -1e-9, np.inf
+    resid_te = np.abs(yhat - y_te)
+    cov = np.zeros(len(y_te), dtype=bool)
+    rows = []
+    for b in range(bins):
+        sel_c = (dist_cal > edges[b]) & (dist_cal <= edges[b + 1])
+        sel_t = (dist_te > edges[b]) & (dist_te <= edges[b + 1])
+        q_b = (np.quantile(resid_cal[sel_c], 1 - alpha)
+               if sel_c.sum() >= min_cal else q_global)
+        cov[sel_t] = resid_te[sel_t] <= q_b
+        if sel_t.sum():
+            rows.append({
+                "bin": b,
+                "n_cal": int(sel_c.sum()),
+                "n_test": int(sel_t.sum()),
+                "dist_range": [float(edges[b]),
+                               float(min(edges[b + 1], dist_te.max()))],
+                "q": float(q_b),
+                "coverage": float(cov[sel_t].mean()),
+                "mae": float(resid_te[sel_t].mean()),
+                "fallback": bool(sel_c.sum() < min_cal),
+            })
+    return rows, cov, edges
 
 
 def main(in_parquet: str, out_json: str):
@@ -104,19 +150,27 @@ def main(in_parquet: str, out_json: str):
             m, X_cal, cal.target.to_numpy(), X_te, te.target.to_numpy(),
             alpha)
         centroid = X_tr.mean(axis=0)
-        dist = np.linalg.norm(X_te - centroid, axis=1)
+        dist_cal = np.linalg.norm(X_cal - centroid, axis=1)
+        dist_te = np.linalg.norm(X_te - centroid, axis=1)
+        mon_rows, mon_cov, edges = mondrian_eval(
+            m, X_cal, cal.target.to_numpy(), dist_cal, dist_te,
+            yhat, te.target.to_numpy(), alpha, ev["ad_bins"])
         res = {
             "conformal_q": float(q),
             "coverage": float(cov.mean()),
             "mean_interval_width": float(2 * q),
+            "mondrian_coverage": float(mon_cov.mean()),
+            "ad_table": _descriptive_table(dist_te, cov,
+                                           np.abs(yhat - te.target.to_numpy()),
+                                           edges),
+            "mondrian_table": mon_rows,
             **metrics(te.target.to_numpy(), yhat),
-            "ad_table": ad_table(dist, cov, np.abs(yhat - te.target.to_numpy()),
-                                 ev["ad_bins"]),
         }
         results[name] = res
         print(f"{name}: rmse {res['rmse']:.2f} mae {res['mae']:.2f} "
               f"spearman {res['spearman']:.3f} | coverage "
-              f"{res['coverage']:.3f} @ target {1 - alpha:.0%} "
+              f"{res['coverage']:.3f} (mondrian {res['mondrian_coverage']:.3f}) "
+              f"@ target {1 - alpha:.0%} "
               f"(width {res['mean_interval_width']:.1f} C)")
 
     out = {
