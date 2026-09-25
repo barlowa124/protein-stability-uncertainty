@@ -87,7 +87,8 @@ def test_mondrian_sparse_bin_falls_back():
     rows, cov, _, _ = mondrian_eval(m, X_cal, y_cal, dist_cal, dist_te,
                                 yhat, y_te, alpha=0.10, bins=2,
                                 min_cal=10)
-    q_global = np.quantile(np.abs(y_cal), 0.90)
+    from protstab.run import _conformal_quantile
+    q_global = _conformal_quantile(np.abs(y_cal), 0.10)
     assert rows[-1]["fallback"] is True
     assert rows[-1]["q"] == pytest.approx(q_global)
 

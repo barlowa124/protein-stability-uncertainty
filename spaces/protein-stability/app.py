@@ -58,7 +58,9 @@ def predict(sequence):
 
     x = embed(seq)
     dist = float(np.linalg.norm(x - CENTROID))
-    bin_i = int(np.searchsorted(EDGES, dist, side="right"))
+    # side="left" matches training's (lower < dist <= upper) convention:
+    # a distance exactly on a bin edge lands in the lower bin
+    bin_i = int(np.searchsorted(EDGES, dist, side="left"))
     z = (x - MEAN) / SCALE
     yhat = float(z @ COEF + INTERCEPT)
     q = float(Q_BIN[bin_i])

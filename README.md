@@ -43,8 +43,8 @@ ESM-2 embed -> ridge -> split-conformal + applicability-domain eval.
 
 | Features | RMSE °C | MAE °C | Spearman | Conformal coverage (target 0.90) | Mean width °C |
 |---|---:|---:|---:|---:|---:|
-| composition + length | 9.62 | 7.49 | 0.32 | 0.886 | 30.0 |
-| ESM-2 mean-pooled | **7.78** | **5.93** | **0.50** | 0.899 | 25.2 |
+| composition + length | 9.62 | 7.49 | 0.32 | 0.888 | 30.1 |
+| ESM-2 mean-pooled | **7.78** | **5.93** | **0.50** | 0.900 | 25.3 |
 
 Sequence LM embeddings carry real thermostability signal: +0.18
 Spearman and -2.3 °C MAE over composition, with narrower intervals.
@@ -55,25 +55,25 @@ applicability domain. With bins fixed on calibration-distance quartiles
 
 | AD bin (near -> far) | n_test | Marginal coverage | MAE °C |
 |---|---:|---:|---:|
-| nearest | 743 | 0.964 | 4.7 |
+| nearest | 743 | 0.965 | 4.7 |
 | | 714 | 0.916 | 5.6 |
-| | 866 | 0.876 | 6.3 |
-| farthest | 811 | 0.847 | 6.9 |
+| | 866 | 0.879 | 6.3 |
+| farthest | 811 | 0.851 | 6.9 |
 
 Predictions degrade smoothly with distance from the training manifold
-(MAE +47%, coverage -11.7pp nearest to farthest). **Mondrian conformal
+(MAE +47%, coverage -11.4pp nearest to farthest). **Mondrian conformal
 recovers flat per-bin coverage** -- a separate residual quantile per bin:
 
 | AD bin | q (half-width °C) | Coverage | MAE °C |
 |---|---:|---:|---:|
-| nearest | 9.8 | 0.894 | 4.7 |
-| | 11.2 | 0.868 | 5.6 |
-| | 14.0 | 0.912 | 6.3 |
+| nearest | 9.9 | 0.898 | 4.7 |
+| | 11.3 | 0.870 | 5.6 |
+| | 14.0 | 0.913 | 6.3 |
 | farthest | 14.5 | 0.908 | 6.9 |
 
-The mechanism is visible in the half-widths: intervals widen from 9.8 °C
+The mechanism is visible in the half-widths: intervals widen from 9.9 °C
 near the manifold to 14.5 °C at the edge, and the near bin's *coverage
-drops* (0.964 -> 0.894) because its interval correctly shrinks. That is
+drops* (0.965 -> 0.898) because its interval correctly shrinks. That is
 the honest trade: same marginal coverage (~0.90), but now the guarantee
 holds per-bin instead of pooling easy and hard points.
 

@@ -58,9 +58,19 @@ def metrics(y, yhat):
     }
 
 
+def _conformal_quantile(resid: np.ndarray, alpha: float) -> float:
+    """Finite-sample split-conformal level: the ceil((n+1)(1-alpha))-th
+    smallest of n calibration residuals. The plain (1-alpha) quantile
+    under-covers; the +1 correction is what makes the guarantee hold."""
+    n = len(resid)
+    level = min(1.0, (1 - alpha) * (n + 1) / n)
+    return float(np.quantile(resid, level, method="higher"))
+
+
 def conformal_eval(m, X_cal, y_cal, X_te, y_te, alpha):
-    """Split conformal: q = (1-alpha) quantile of |y - yhat| on cal."""
-    q = np.quantile(np.abs(predict(m, X_cal) - y_cal), 1 - alpha)
+    """Split conformal: q = corrected (1-alpha) quantile of |y - yhat|
+    on cal."""
+    q = _conformal_quantile(np.abs(predict(m, X_cal) - y_cal), alpha)
     yhat = predict(m, X_te)
     cov = np.abs(yhat - y_te) <= q
     return q, yhat, cov
@@ -89,7 +99,7 @@ def mondrian_eval(m, X_cal, y_cal, dist_cal, dist_te, yhat, y_te,
     """Mondrian conformal: per-AD-bin residual quantiles, edges fixed on
     calibration distances. Sparse bins fall back to the global quantile."""
     resid_cal = np.abs(predict(m, X_cal) - y_cal)
-    q_global = np.quantile(resid_cal, 1 - alpha)
+    q_global = _conformal_quantile(resid_cal, alpha)
     edges = np.quantile(dist_cal, np.linspace(0, 1, bins + 1))
     edges[0], edges[-1] = -1e-9, np.inf
     resid_te = np.abs(yhat - y_te)
@@ -99,7 +109,7 @@ def mondrian_eval(m, X_cal, y_cal, dist_cal, dist_te, yhat, y_te,
     for b in range(bins):
         sel_c = (dist_cal > edges[b]) & (dist_cal <= edges[b + 1])
         sel_t = (dist_te > edges[b]) & (dist_te <= edges[b + 1])
-        q_b = (np.quantile(resid_cal[sel_c], 1 - alpha)
+        q_b = (_conformal_quantile(resid_cal[sel_c], alpha)
                if sel_c.sum() >= min_cal else q_global)
         q_bins[b] = q_b
         cov[sel_t] = resid_te[sel_t] <= q_b
