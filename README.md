@@ -47,7 +47,7 @@ ESM-2 embed -> ridge -> split-conformal + applicability-domain eval.
 | ESM-2 mean-pooled | **7.78** | **5.93** | **0.50** | 0.900 | 25.3 |
 
 Sequence LM embeddings carry real thermostability signal: +0.18
-Spearman and -2.3 °C MAE over composition, with narrower intervals.
+Spearman and -1.6 °C MAE over composition (RMSE -1.8 °C), with narrower intervals.
 
 Marginal coverage lands at 0.89-0.90, but it is not uniform across the
 applicability domain. With bins fixed on calibration-distance quartiles
