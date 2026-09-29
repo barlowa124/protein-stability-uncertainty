@@ -1,3 +1,7 @@
+> **This repository has moved.** Active development continues in [barlowa124/protein-ml](https://github.com/barlowa124/protein-ml) under [`protein_stability_uncertainty/`](https://github.com/barlowa124/protein-ml/tree/main/protein_stability_uncertainty). This repo is archived and kept for link stability.
+
+---
+
 # protein-stability-uncertainty
 
 Sequence -> protein **melting point** regression with calibrated
